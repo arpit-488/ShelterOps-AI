@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ShelterOps AI — Disaster Shelter Allocation</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">🚨</span>
+    <div>
+      <h1>ShelterOps <span class="accent">AI</span></h1>
+      <p class="tagline">AI-Based Disaster Shelter Allocation · search · reasoning · agents</p>
+    </div>
+  </div>
+  <div class="chips">
+    <span class="chip" id="chipScenario">—</span>
+    <span class="chip" id="chipPop">—</span>
+    <span class="chip" id="chipCap">—</span>
+    <span class="chip" id="chipCoverage">—</span>
+    <span class="chip" id="chipGemini">—</span>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-tab="dashboard">📍 Dashboard</button>
+  <button class="tab" data-tab="scenario">🗺️ Scenario</button>
+  <button class="tab" data-tab="algorithms">🧠 Algorithms</button>
+  <button class="tab" data-tab="reasoning">⚖️ Reasoning</button>
+  <button class="tab" data-tab="agents">🤖 Agents</button>
+  <button class="tab" data-tab="report">📄 AI Report</button>
+</nav>
+
+<main>
+
+<!-- ================= DASHBOARD ================= -->
+<section class="tab-panel active" id="tab-dashboard">
+  <div id="missionBanner" class="mission-banner hidden"></div>
+  <div class="kpi-grid">
+    <div class="kpi"><span class="kpi-label">Evacuees</span><span class="kpi-value" id="kpiEvacuees">—</span></div>
+    <div class="kpi"><span class="kpi-label">Shelter capacity</span><span class="kpi-value" id="kpiCapacity">—</span></div>
+    <div class="kpi"><span class="kpi-label">Coverage</span><span class="kpi-value good" id="kpiCoverage">—</span></div>
+    <div class="kpi"><span class="kpi-label">Avg distance</span><span class="kpi-value" id="kpiDistance">—</span></div>
+    <div class="kpi"><span class="kpi-label">Max utilization</span><span class="kpi-value" id="kpiUtil">—</span></div>
+    <div class="kpi"><span class="kpi-label">Plan status</span><span class="kpi-value" id="kpiStatus">—</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Live shelter status</h2>
+      <span class="muted">🟢 available · 🟡 filling · 🔴 full / at-risk</span>
+    </div>
+    <div class="status-grid" id="statusGrid"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Operations map — North India (real terrain)</h2>
+      <div class="head-tools">
+        <button class="btn small" id="btnDetectMode">🛰️ Auto-detect from map</button>
+        <button class="btn small primary" id="btnMission">🚀 Run full AI mission</button>
+        <span class="muted" id="dashAlgoLabel">plan: —</span>
+      </div>
+    </div>
+    <div class="map-wrap">
+      <div id="leafletMap"></div>
+    </div>
+    <div class="legend">
+      <span><i class="dot dot-zone"></i> Zone (size = population, colour = priority)</span>
+      <span><i class="dot dot-shelter"></i> Shelter</span>
+      <span><i class="dot dot-med"></i> Medical unit</span>
+      <span><i class="dot dot-link"></i> Allocation flow</span>
+      <span><i class="dot dot-circle"></i> Primary coverage (~15 km)</span>
+      <span class="muted">🖱️ scroll / pinch to zoom · double-click to zoom in · double right-click to zoom out · drag to pan · Shift-drag to select area</span>
+      <span class="muted">© OpenStreetMap contributors</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Current allocation plan</h2></div>
+    <div class="table-wrap">
+      <table id="planTable">
+        <thead><tr>
+          <th>Zone</th><th>Priority</th><th>People</th><th>Assigned shelter</th>
+          <th>Distance</th><th>Shelter load</th>
+        </tr></thead>
+        <tbody id="planBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SCENARIO ================= -->
+<section class="tab-panel" id="tab-scenario">
+  <div class="card">
+    <div class="card-head"><h2>Scenario settings</h2></div>
+    <div class="form-row">
+      <label>Name <input id="scName" type="text" /></label>
+      <label>Disaster type <input id="scType" type="text" /></label>
+      <label>Max travel (km) <input id="scMaxTravel" type="number" min="1" max="50" step="0.5" /></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Affected zones (demand)</h2>
+      <button class="btn small" id="btnAddZone">+ Add zone</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>Name</th><th>Population</th><th>Priority (1-5)</th><th>Medical need</th><th>Lat</th><th>Lng</th><th></th></tr></thead>
+        <tbody id="zonesBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Shelters (supply)</h2>
+      <button class="btn small" id="btnAddShelter">+ Add shelter</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>Name</th><th>Capacity</th><th>Medical</th><th>Lat</th><th>Lng</th><th></th></tr></thead>
+        <tbody id="sheltersBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn" id="btnResetScenario">↺ Reset to default</button>
+    <button class="btn primary" id="btnSaveScenario">💾 Save &amp; re-plan</button>
+  </div>
+</section>
+
+<!-- ================= ALGORITHMS ================= -->
+<section class="tab-panel" id="tab-algorithms">
+  <div class="card">
+    <div class="card-head"><h2>Run approaches</h2></div>
+    <div class="algo-buttons">
+      <button class="btn" data-algo="greedy">1️⃣ Greedy</button>
+      <button class="btn" data-algo="hill_climbing">2️⃣ Hill Climbing</button>
+      <button class="btn" data-algo="backtracking">3️⃣ Backtracking (B&amp;B)</button>
+      <button class="btn" data-algo="simulated_annealing">4️⃣ Simulated Annealing</button>
+      <button class="btn" data-algo="genetic">5️⃣ Genetic Algorithm</button>
+      <button class="btn primary" id="btnRunAll">⚡ Run all &amp; compare</button>
+    </div>
+    <div id="winnerBanner" class="banner hidden"></div>
+    <div class="table-wrap">
+      <table id="algoTable">
+        <thead><tr>
+          <th>#</th><th>Approach</th><th>Score ↓</th><th>Coverage</th>
+          <th>Distance cost</th><th>Avg km</th><th>Overflow</th><th>Unplaced</th>
+          <th>Feasible</th><th>Runtime</th>
+        </tr></thead>
+        <tbody id="algoBody"><tr class="empty"><td colspan="10">Run an algorithm to see results…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card"><div class="card-head"><h2>Penalized score (lower = better)</h2></div><canvas id="chartScore" height="240"></canvas></div>
+    <div class="card"><div class="card-head"><h2>Coverage % (higher = better)</h2></div><canvas id="chartCoverage" height="240"></canvas></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Optimisation convergence</h2></div>
+    <canvas id="chartConvergence" height="220"></canvas>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Search trace</h2>
+      <select id="tracePicker" class="select"><option value="">— pick a run —</option></select>
+    </div>
+    <pre id="traceView" class="trace">Run Backtracking (B&B) and Greedy to inspect their step-by-step search.</pre>
+  </div>
+</section>
+
+<!-- ================= REASONING ================= -->
+<section class="tab-panel" id="tab-reasoning">
+  <div class="card">
+    <div class="card-head">
+      <h2>Logical reasoning (forward chaining)</h2>
+      <button class="btn" id="btnRunLogic">▶ Validate current plan</button>
+    </div>
+    <div class="verdict" id="logicVerdict">Run validation to see the verdict.</div>
+    <h3 class="sub">Violations</h3>
+    <div id="logicViolations" class="violations"><span class="muted">—</span></div>
+    <h3 class="sub">Fired rules</h3>
+    <div id="logicFired" class="fired"><span class="muted">—</span></div>
+    <details class="facts">
+      <summary>Derived fact base (<span id="factCount">0</span> facts)</summary>
+      <div id="logicFacts" class="fact-chips"></div>
+    </details>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Probabilistic reasoning (Bayesian network)</h2>
+      <button class="btn" id="btnDetectRain">🛰️ Detect live rain</button>
+    </div>
+    <p class="muted small">Or let the system fetch REAL live rainfall (Open-Meteo) and set the evidence for you — then infer P(shelter accessible) and plan against risk.</p>
+    <div class="form-row" id="bayesControls"></div>
+    <div class="actions">
+      <button class="btn primary" id="btnRunBayes">🎲 Run Bayesian inference</button>
+    </div>
+    <canvas id="chartBayes" height="200"></canvas>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Shelter</th><th>Capacity</th><th>P(access) prior</th><th>P(access) posterior</th><th>Risk-adjusted capacity</th></tr></thead>
+        <tbody id="riskBody"></tbody>
+      </table>
+    </div>
+    <div id="bayesNarrative" class="narrative"></div>
+    <div id="riskPlanSummary" class="riskplan"></div>
+  </div>
+</section>
+
+<!-- ================= AGENTS ================= -->
+<section class="tab-panel" id="tab-agents">
+  <div class="card">
+    <div class="card-head">
+      <h2>Multi-agent coordination (contract net)</h2>
+      <button class="btn primary" id="btnRunAgents">▶ Run simulation</button>
+    </div>
+    <div class="kpi-grid" id="agentsSummary"></div>
+    <div id="agentsLog" class="agent-log"><span class="muted">Run the simulation to watch agents negotiate…</span></div>
+  </div>
+</section>
+
+<!-- ================= AI REPORT ================= -->
+<section class="tab-panel" id="tab-report">
+  <div class="card">
+    <div class="card-head">
+      <h2>Grounded AI situation report</h2>
+      <button class="btn primary" id="btnGenerateReport">✨ Generate report</button>
+    </div>
+    <p class="muted small">The report is generated from the numbers this app actually computed
+      (algorithms, Bayesian risk, agents) — grounded, not guessed.
+      Without a Gemini key you still get the offline template report.</p>
+    <div id="reportSource" class="badge hidden"></div>
+    <div id="reportContent" class="report"><span class="muted">Click “Generate report”…</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Ask the AI analyst</h2>
+      <button class="btn small" id="btnChatClear">🗑 Clear</button>
+    </div>
+    <div id="chatChips" class="chat-chips"></div>
+    <div id="chatBox" class="chat"></div>
+    <div class="chat-input-row">
+      <input id="chatInput" type="text" placeholder="e.g. Which shelter is most at risk and why?" />
+      <button class="btn primary" id="btnChatSend">Send</button>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  ShelterOps AI · prototype for education — search · logic · probability · agents · LLM grounding
+</footer>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
